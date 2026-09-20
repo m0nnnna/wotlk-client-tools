@@ -1,27 +1,58 @@
-# WotLK 3.3.5a client patching tools
+# NekoCore client patcher + WotLK 3.3.5a client tools
 
-Small, dependency-free Python scripts for patching a **World of Warcraft 3.3.5a
-(build 12340)** client to play on a private server: fix the camera bug in
-`Wow.exe`, point the client at a realm, pack custom DBCs into a patch MPQ the
-client will actually load, and bundle the finished client into a clean zip for
-players.
+Everything needed to turn a stock **World of Warcraft 3.3.5a (build 12340)**
+client into a NekoCore-ready one -- as a single-file Windows app for players,
+and as the plain Python scripts behind it for anyone running their own server.
 
 Everything here works against a client install **you already own**. Nothing in
 this repo contains or downloads any Blizzard data.
 
+## Players: NekoCorePatcher.exe (no Python needed)
+
+1. Grab `NekoCorePatcher.exe` from the
+   [latest release](https://github.com/m0nnnna/wotlk-client-tools/releases/latest).
+2. Run it. It looks for your WoW 3.3.5a folder in the usual places; if it
+   doesn't find it, click **Browse...** and pick the folder that contains
+   `Wow.exe`. Make sure the game is closed.
+3. Click **Patch my client**. It will:
+   - fix the right-click camera snap bug in `Wow.exe` (`Wow.exe.bak` is kept),
+   - download the NekoCore patch (~200 MB: `Data\patch-Z.mpq` with the era
+     talents and other DBC changes, plus the `Interface\AddOns\` addons), and
+   - point `realmlist.wtf` at `wow1.nekos.farm`.
+4. Start `Wow.exe` and log in.
+
+Run it again any time -- it skips whatever is already done and only
+re-downloads the patch when the server has a newer one. If you already have
+`nekocore-patch.zip` (say, from the website), point the **Patch zip** field at
+it to skip the download.
+
+Windows SmartScreen will warn about an unknown publisher the first time; the
+exe is unsigned. It is built by GitHub Actions straight from this repo
+(`.github/workflows/release.yml`, PyInstaller over `nekocore_patcher.py`), so
+you can compare it against the source or build your own with `python build_gui.py`.
+
+Headless use of the same thing:
+
+```
+python nekocore_patcher.py --cli --wotlk-root "D:\Games\World of Warcraft 3.3.5a"
+```
+
+## The scripts
+
 | Script | What it does |
 | --- | --- |
+| `nekocore_patcher.py` | The GUI/CLI above -- glues the three tools below together with the NekoCore defaults. |
 | `patch_camera_bug.py` | Fixes the "camera snaps to straight up/down on right-click" bug in `Wow.exe`. Checks every byte before writing, backs up first. |
-| `set_realmlist.py` | Rewrites `Data\<locale>\realmlist.wtf` to point at a server. |
+| `set_realmlist.py` | Rewrites `Data\<locale>ealmlist.wtf` to point at a server. |
 | `pack_mpq.py` | Packs a folder (e.g. `DBFilesClient\*.dbc`) into a `patch-*.mpq`. |
 | `mpq_writer.py` | The MPQ writer `pack_mpq.py` uses; import it if you'd rather build archives from your own script. |
 | `build_client_zip.py` | Allowlist-packs a patched client into a distributable zip -- stock archives, your patch MPQ, your addons, a fresh `realmlist.wtf`, and nothing else. |
 
-Requirements: Python 3.10+. No pip packages.
+Requirements for the scripts: Python 3.10+, no pip packages. The exe needs nothing.
 
 ---
 
-## Player guide: connect an existing client to a server
+## Manual guide: connect an existing client to a server (any server)
 
 You need a stock 3.3.5a client and the server's logon hostname (something like
 `logon.example.com`). Open a terminal in this folder.
@@ -138,5 +169,4 @@ already excludes `*.mpq`, `*.zip`, `*.bak`).
 
 Credits: the camera patch bytes are the community patch from Warmane's forums;
 the MPQ hash/crypt routines follow the format documented at
-[wowdev.wiki/MPQ](https://wowdev.wiki/MPQ) with known-answer tests taken from
-the open-wow-client project's reader.
+[wowdev.wiki/MPQ](https://wowdev.wiki/MPQ).

@@ -3,12 +3,10 @@ Minimal MPQ (v0) archive writer -- just enough to build a small, uncompressed
 patch archive the retail 3.3.5a client will load (e.g. a modified Talent.dbc).
 
 The usual Python MPQ libraries (mpyq etc.) can only READ an archive, not
-write one -- so this is new code, not a port. The crypto (hash table
-generation, path hashing, stream cipher) is transcribed from
-open-wow-client's crates/mpq/src/crypt.rs, which documents its own
-known-answer test vectors
-(hash("(hash table)", FILE_KEY) == 0xC3AF3770, etc.) -- reused here rather
-than re-derived, and checked again below at import time so a transcription
+write one -- so this is new code. The crypto (hash table generation, path
+hashing, stream cipher) follows the format documented at wowdev.wiki/MPQ
+and is checked at import time against the well-known known-answer vectors
+(hash("(hash table)", FILE_KEY) == 0xC3AF3770, etc.) so a transcription
 error fails loud instead of producing a silently-corrupt archive.
 
 Deliberately minimal: every file is stored SINGLE_UNIT, uncompressed,
