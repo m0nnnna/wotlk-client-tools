@@ -22,5 +22,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          files: dist/NekoCorePatcher.exe
+          files: dist/NekoCoreLauncher.exe
           generate_release_notes: true
