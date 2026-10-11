@@ -340,10 +340,35 @@ def ensure_prefix(log=print) -> None:
         log("DXVK not found; using Wine's own Direct3D (slower)")
 
 
+def screen_size() -> tuple[int, int]:
+    try:
+        import tkinter as tk
+        t = tk.Tk(); t.withdraw()
+        size = (t.winfo_screenwidth(), t.winfo_screenheight())
+        t.destroy()
+        return size
+    except Exception:
+        return (1920, 1080)
+
+
+def default_config(root: Path, log=print) -> None:
+    """First run on Linux: start fullscreen at the screen's resolution. The
+    client's own default is a 1024x768 window at the top-left corner."""
+    wtf = root / "WTF" / "Config.wtf"
+    if wtf.exists():
+        return
+    w, h = screen_size()
+    wtf.parent.mkdir(parents=True, exist_ok=True)
+    wtf.write_text(f'SET gxWindow "0"\nSET gxMaximize "0"\nSET gxResolution "{w}x{h}"\n'
+                   'SET gxVSync "1"\nSET realmList "' + REALM + '"\n', encoding="utf-8")
+    log(f"first run: fullscreen at {w}x{h} (change it in the game's Video options)")
+
+
 def launch_wine(root: Path, log=print) -> None:
     if not shutil.which("wine"):
         raise RuntimeError("Wine is not installed (sudo apt install wine wine32:i386)")
     ensure_prefix(log)
+    default_config(root, log)
     env = wine_env()
     if any(Path(c).is_file() for c in DXVK32_CANDIDATES):
         env["WINEDLLOVERRIDES"] = "d3d9=n,b"
