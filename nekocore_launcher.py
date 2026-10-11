@@ -299,6 +299,9 @@ def launch(root: Path, log=print) -> None:
 # 32-bit DXVK d3d9 (Wow.exe 3.3.5a is a 32-bit Direct3D 9 game): Debian's
 # dxvk-wine32 package, or a copy dropped next to the launcher.
 DXVK32_CANDIDATES = [
+    # Ultimit's pinned DXVK (scripts/get-dxvk.sh): per user, then system-wide.
+    str(Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "ultimit" / "dxvk" / "current" / "x32" / "d3d9.dll"),
+    "/opt/ultimit/dxvk/current/x32/d3d9.dll",
     "/usr/lib/i386-linux-gnu/dxvk/wine32-development/d3d9.dll",
     "/usr/lib/i386-linux-gnu/dxvk/wine32/d3d9.dll",
     "/usr/lib/dxvk/wine32/d3d9.dll",
