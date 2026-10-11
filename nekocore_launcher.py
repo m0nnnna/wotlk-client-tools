@@ -51,7 +51,13 @@ RELEASES_API = "https://api.github.com/repos/m0nnnna/wotlk-client-tools/releases
 RELEASES_PAGE = "https://github.com/m0nnnna/wotlk-client-tools/releases/latest"
 USER_AGENT = f"NekoCoreLauncher/{__version__}"
 VERSION_LUA = Path("Interface", "AddOns", "NekoPatchCheck", "Version.lua")
-SETTINGS = Path(os.environ.get("APPDATA", Path.home())) / "NekoCore" / "launcher.json"
+IS_WINDOWS = os.name == "nt"
+if IS_WINDOWS:
+    SETTINGS = Path(os.environ.get("APPDATA", Path.home())) / "NekoCore" / "launcher.json"
+else:
+    SETTINGS = Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "nekocore" / "launcher.json"
+    # Wow.exe runs under Wine in its own prefix (a self-contained fake C:).
+    WINEPREFIX = Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "nekocore" / "prefix"
 
 COMMON_ROOTS = [
     r"D:\Games\World of Warcraft 3.3.5a",
@@ -79,9 +85,24 @@ def save_settings(settings: dict) -> None:
         pass  # a launcher that cannot remember the folder still works
 
 
+def linux_candidates() -> list[str]:
+    """Wow.exe folders up to two levels under ~/Games and ~/Downloads."""
+    out = []
+    for base in (Path.home() / "Games", Path.home() / "Downloads", Path.home()):
+        if not base.is_dir():
+            continue
+        for pattern in ("*/Wow.exe", "*/*/Wow.exe"):
+            try:
+                out += [str(p.parent) for p in sorted(base.glob(pattern))]
+            except OSError:
+                pass
+    return out
+
+
 def find_client() -> Path | None:
     saved = load_settings().get("wotlk_root")
-    for r in ([saved] if saved else []) + COMMON_ROOTS:
+    roots = COMMON_ROOTS if IS_WINDOWS else linux_candidates()
+    for r in ([saved] if saved else []) + roots:
         p = Path(r)
         if (p / "Wow.exe").is_file():
             return p
@@ -265,9 +286,72 @@ def prepare(root: Path, *, manifest: dict | None, patch_zip: Path | None = None,
     write_realmlist(root, REALM, log)
 
 
-def launch(root: Path) -> None:
-    subprocess.Popen([str(root / "Wow.exe")], cwd=str(root),
-                     creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+def launch(root: Path, log=print) -> None:
+    if IS_WINDOWS:
+        subprocess.Popen([str(root / "Wow.exe")], cwd=str(root),
+                         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+        return
+    launch_wine(root, log)
+
+
+# ---------------------------------------------------------------- Linux (Wine)
+
+# 32-bit DXVK d3d9 (Wow.exe 3.3.5a is a 32-bit Direct3D 9 game): Debian's
+# dxvk-wine32 package, or a copy dropped next to the launcher.
+DXVK32_CANDIDATES = [
+    "/usr/lib/i386-linux-gnu/dxvk/wine32-development/d3d9.dll",
+    "/usr/lib/i386-linux-gnu/dxvk/wine32/d3d9.dll",
+    "/usr/lib/dxvk/wine32/d3d9.dll",
+    "/usr/share/dxvk/x32/d3d9.dll",
+]
+
+
+def _has_nvidia() -> bool:
+    return shutil.which("nvidia-smi") is not None or Path("/proc/driver/nvidia/version").exists()
+
+
+def wine_env() -> dict:
+    env = dict(os.environ)
+    env["WINEPREFIX"] = str(WINEPREFIX)
+    env.setdefault("WINEDEBUG", "-all")
+    env.setdefault("DXVK_LOG_LEVEL", "none")
+    gpu = load_settings().get("gpu", "discrete")
+    if gpu == "discrete" and _has_nvidia():
+        # Hybrid laptops: render on the NVIDIA GPU (PRIME render offload).
+        env.update({"__NV_PRIME_RENDER_OFFLOAD": "1", "__GLX_VENDOR_LIBRARY_NAME": "nvidia",
+                    "__VK_LAYER_NV_optimus": "NVIDIA_only", "DXVK_FILTER_DEVICE_NAME": "NVIDIA"})
+    return env
+
+
+def ensure_prefix(log=print) -> None:
+    """Create the Wine prefix on first run and put 32-bit DXVK in it."""
+    env = wine_env()
+    if not (WINEPREFIX / "system.reg").exists():
+        log("setting up Wine (first run, takes a minute)...")
+        WINEPREFIX.mkdir(parents=True, exist_ok=True)
+        subprocess.run(["wineboot", "-u"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    syswow = WINEPREFIX / "drive_c" / "windows" / "syswow64"
+    target = (syswow if syswow.is_dir() else WINEPREFIX / "drive_c" / "windows" / "system32") / "d3d9.dll"
+    src = next((Path(c) for c in DXVK32_CANDIDATES if Path(c).is_file()), None)
+    if src and (not target.exists() or target.stat().st_size != src.stat().st_size):
+        shutil.copyfile(src, target)
+        log(f"DXVK enabled ({src})")
+    elif not src:
+        log("DXVK not found; using Wine's own Direct3D (slower)")
+
+
+def launch_wine(root: Path, log=print) -> None:
+    if not shutil.which("wine"):
+        raise RuntimeError("Wine is not installed (sudo apt install wine wine32:i386)")
+    ensure_prefix(log)
+    env = wine_env()
+    if any(Path(c).is_file() for c in DXVK32_CANDIDATES):
+        env["WINEDLLOVERRIDES"] = "d3d9=n,b"
+    cmd = ["wine", str(root / "Wow.exe")]
+    if shutil.which("gamemoderun"):
+        cmd = ["gamemoderun"] + cmd
+    subprocess.Popen(cmd, cwd=str(root), env=env, start_new_session=True,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 # ---------------------------------------------------------------- GUI
@@ -419,7 +503,7 @@ def gui() -> int:
                 prepare(root, manifest=state["manifest"], force=force, log=log, progress=progress)
                 if then_play:
                     log("starting World of Warcraft...")
-                    launch(root)
+                    launch(root, log)
                     ui(win.destroy)
                     return
                 ui(lambda: messagebox.showinfo(APP_NAME, "Your client is ready."))
